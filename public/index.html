@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+
+		<title>Hobby Musician Assistant</title>
+
+		<style>
+			h2 {
+				margin-left: 20px;
+			}
+			p {
+				margin: 10px;
+				margin-bottom: 1.4em;
+			}
+		</style>
+
+		<script>
+			const playFrequency = (context, frequency) => {
+				var oscillator = context.createOscillator();
+				oscillator.frequency.value = frequency;
+				return oscillator;
+			}
+
+			//sound is synthesized using oscillators, gainNodes included in WebAudio API
+			const playSound = (state, frequencyInput, noTremolo, noFading) => {
+				// only one sound can be played at a time
+				if (state.isPlaying === true) {
+					return;
+				}
+
+				window.AudioContext = window.AudioContext || window.webkitAudioContext;
+				let context = new AudioContext();
+
+				let oscillators = [];
+				if (Number.isInteger(frequencyInput)) {
+					oscillators.push(playFrequency(context, frequencyInput));
+				}
+				else if (Array.isArray(frequencyInput)) {
+					for (let i = 0; i < frequencyInput.length; i++) {
+						oscillators.push(playFrequency(context, frequencyInput[i]));
+					}
+				}
+				else {
+					throw new Error("Invalid input frequency data!");
+				}
+
+
+				// ***TREMOLO SETUP***
+				//
+				// tremoloOscillator -
+				//                     \ (changes gain!!!)
+				//
+				// sound source   ---> tremolo amplifier ---> final amplifier ---> destination 
+				//
+				// If we want to turn off tremolo we should NOT start tremoloOscillator
+				// and MUST set proper gain value for "vibrato amplifier".
+
+				let tremoloAmp = context.createGain();
+				tremoloAmp.gain.value = 0.01;
+
+				for (let i = 0; i < oscillators.length; i++) {
+					oscillators[i].connect(tremoloAmp);
+				}
+
+				//vibrato means small controlled change in sound volume
+				var tremoloOscillator = context.createOscillator();
+				tremoloOscillator.frequency.value = 0.78;
+				tremoloOscillator.connect(tremoloAmp.gain);
+
+				if (noTremolo) {
+					tremoloAmp.gain.value = 1;
+				}
+				else {
+					oscillators.push(tremoloOscillator);
+				}
+
+				// Using audioContext time system allows better sound scheduling
+				let currentTime = context.currentTime;
+				let secondsToPlay = 2;
+
+				let finalAmp = context.createGain();
+
+				// ***FADING SETUP***
+				//
+				// Fading in and fading out means gradual volume increase or decrease. Here it is done via WebAudio internal functions.
+				let volume = 0.7;
+
+				if (noFading) {
+					finalAmp.gain.value = volume;
+				} 
+				else {
+
+					finalAmp.gain.value = 0.1;
+					finalAmp.gain.setValueAtTime(finalAmp.gain.value, currentTime); //fade in requires this (wtf?)
+					finalAmp.gain.exponentialRampToValueAtTime(volume, currentTime+0.3);
+					finalAmp.gain.setValueAtTime(volume, currentTime+secondsToPlay-0.3); //this is a way to control fade out time
+					finalAmp.gain.exponentialRampToValueAtTime(0.01, currentTime+secondsToPlay);
+				}
+				finalAmp.connect(context.destination);
+				tremoloAmp.connect(finalAmp);
+
+
+				// start playing
+				oscillators.forEach( oscillator => oscillator.start(currentTime));
+				state.isPlaying = true;
+
+
+				// mechanism to block other sounds from playing while another is playing right now
+				setTimeout(
+					() => {
+						oscillators.forEach(oscillator => oscillator.stop());
+						state.isPlaying = false;
+					},
+					secondsToPlay*1000);
+			}
+			window.onload = () => {
+				let state = {
+					isPlaying: false
+				};
+
+				let links = document.querySelectorAll("a");
+
+					links.forEach(
+					link => {
+						let sound_description = link.id;
+						if ((sound_description !== "" ||
+							sound_description.startsWith("tremolo") ||
+							sound_description.startsWith("fading") ||
+							sound_description.startsWith("hz")) === false) {
+							//this is not a link that should produce sound
+							return;
+						}
+
+						let noTremolo = !sound_description.includes("tremolo_");
+						let noFading = !sound_description.includes("fading_");
+
+						let frequencyData = sound_description
+							.replace("tremolo_", "")
+							.replace("fading_", "")
+							.replace("hz", "");
+						
+						let input = frequencyData.includes("_") ?
+							frequencyData.split("_") :
+							parseInt(frequencyData);
+
+						if (Array.isArray(input)) {
+							input = input.map((value) => parseInt(value));
+						}
+
+						//sound producing code for link click
+						link.onclick = (e) => {
+							playSound(state, input, noTremolo, noFading);
+							e.stopPropagation();
+							e.preventDefault();
+						}
+					}
+				);
+			}
+		</script>
+	</head>
+
+	<body style="color: #323232; line-height: 1.7;font-family: Arial; font-size: 18px;">
+
+		<div id="chapter1.1">
+			<h2>Music. Sounds. Notes.</h2>
+			<p>You like like playing guitar or piano for fun? But when you produce those sounds you easily get lost and don't know where to go? Let's play around with some basic ideas behind music theory.</p>
+			<p>What is music? Series of sounds that make listeners feel something. Ok lets forget about the listeners for a second and think about the (hobby?) players. What is music to them? It is something they produce with their instruments and fingers and memory? Lets omit instrument part for once. It is a series of sounds played one after another that player wanted to hear.</p>
+			<p>So music is this chain of sounds. But how to compare those sounds? How to choose better ones for your playing? How to see any order behind them if we make a string of hundreds of sounds? All these questions may sound (pun not intended) simplistic but we must start somewhere right?</p>
+			<p>For sure sounds have their loudness, length or associated feeling with them. But I care about two types of sounds: pitched and unpitched.</p>
+			<p>When you think drums, you think more of a controlled noise. When you think acoustic guitar or piano you think about something called note. You sure get the idea that two guitars can play same melody and sound pleasant (if done right of course). But hmm if two drummers played same stuff and you listened their recording would you know if there were two drummers or one?</p>
+			<p>What is that pitched thing? From practical point of view it is a quality of sound when listener can *feel* that sound (one note on piano or guitar) has some main frequency (pitch!) associated with it. And if two instruments are tuned right you can play note with same pitch on both of them and it would sound nice or even harmoniously!</p>
+			<p>So you can run away from theory. It is all physics and frequencies and Hertz and nothing more but hang on for a second. Sounds may have associated frequencies from infrasound like 20Hz to ultrasound 20.000Hz (this one suitable for bats). You plan to name all of them? It would be super hard to make an actual instrument that can produce such notes properly and how would you compose a music using almost 20000 notes? Nahh too complicated. We need some practical solution and not some dry theory (pun intended)!</p>
+		</div>
+
+		<div id="chapter1.2">
+			<h2>Let it play!</h2>
+			<p>So we are ready to start our note exploration. But what is the nicest most practical note to choose? I suggest the one used by Internationsl organization for Standardization (<a href="https://en.wikipedia.org/wiki/A440_(pitch_standard)">wikipedia here!</a>) and has frequency of 440Hz. <a id="hz440" href="#">Play!</a></p>
+			<p>Where to go next? Lets choose the one that is twice more frequent and one that is half as frequent.<a id="hz880" href="#">Play 880Hz</a> or <a id="hz220"href="#">Play 220Hz</a>! Now almost the fun part, what would happen if we played them all at once? <a id="hz220_440_880" href="#">Play 220, 440, 880!</a></p>
+			<p>Thanks I hate it! These sounds are so artificial that I can't even call them notes or consider them something produced by normal instrument. Lets add some tweaks to them.</p>
+			<p>When thinking about sounds that sound natural you may think about people talking, bird signing or whatever. Important fact is that not that often sounds have the same loudness to them. Lets make our sounds less loud at the beginning and the end. <a id="fading_hz220" href="#">Play 220</a> or <a id="fading_hz440" href="#">Play 440</a> or <a id="fading_hz880" href="#">Play 880</a> or <a id="fading_hz220_440_880" href="#">Play 220, 440, 880</a>.</p>
+			<p>Definitely better. But what if we tried to change loudness in the process of playing sound? Maybe even adding some pattern, like pronouncing wow,wow,wow? <a id="tremolo_fading_hz220" href="#">Play 220</a> or <a id="tremolo_fading_hz440" href="#">Play 440</a> or <a id="tremolo_fading_hz880" href="#">Play 880</a> or <a id="tremolo_fading_hz220_440_880" href="#">Play 220, 440, 880</a>.</p>
+			<p>Last sound reminds me of organ. Maybe some Bach music played on it. But we are here not to build synthesized instruments. We want to get useful practical notes or at least ideas about them. And first one that I hear is that when we play frequencies that are ratios like 2:1 or 1:2 they sound pretty good. Enough words. If idea is correct that we can build our three note combo around another frequency! <a id="tremolo_fading_hz330_660_1320" href="#">Play 330, 660, 1320!</a></p>
+			<p>I got stupid idea to share. How would three times same note sound with our sound system? <a id="tremolo_fading_hz440_440_440" href="#">Play 440, 440, 440!</a> Actually it seems that idea was not that dumb after all. When we played same notes it resulted in the same note that was louder!</p>
+			<p>I am getting a bit ahead of my explanation with experiments, but we came here for some practicality. So this property of sound -> play same note on multiple instruments and it gets louder -> allows playing in huge room and make music loud enough for big audience (without electricity, speakers and everything).</p>
+			<p>And second practical thing. You want to tune your instrument to play well with another one? Then try to play same note on them and if it sounds good then you can tune tens of them using just (trained) ear. <a id="tremolo_fading_hz440_440" href="#">Play 440, 440</a> or <a id="tremolo_fading_hz440_454" href="#">Play 440, 454</a>!</p>
+			<p>So last sound was more like from night owl than from two musical instruments. It seems that the chosen ratio of 227:220 does not sound too great for our ears. What if we tried 3:2 ratio in combo? <a id="tremolo_fading_hz440_660" href="#">Play 440, 660!</a></p>
+			<p>And that sounds absolutely nice!</p>
+		</div>
+
+	</body>
+</html>
